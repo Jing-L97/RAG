@@ -11,7 +11,6 @@ from RAG.datasets.train_parser import clean_text
 ################# Functions #################
 val_prop = 0.1
 test_prop = 0.1
-chunk_size = 5000000        # set 5M chunk sizes and end up with 11 chunks
 chunk_num = 11      # predefined chunk numbers, calculate through whole words
 
 def count_words(data:list):
@@ -22,7 +21,7 @@ def count_words(data:list):
         word_counts += len(words)
     return word_counts
 
-def get_stat(text_path:str,CHILDES_path:str,clean_path:str):
+def clean_data(text_path:str,CHILDES_path:str,clean_path:str):
     """clean and get stat of each file to prepare for the data chunking"""
 
     stat_dict = {}
@@ -53,6 +52,11 @@ def get_stat(text_path:str,CHILDES_path:str,clean_path:str):
     for dataset,token_num in stat_dict.items():
         # get prop of each part
         stat_dict[dataset] = [token_num,token_num/token_all]
+    # print put a df to store the results
+    data_list = [(key, *value) for key, value in stat_dict.items()]
+    # Convert list of tuples to DataFrame
+    stat = pd.DataFrame(data_list, columns=['dataset', 'token_num', 'prop'])
+    stat.to_csv(clean_path + 'stat.csv')
     return stat_dict
 
 
@@ -82,6 +86,8 @@ def group_txt(all_train,out_path,mode):
                     # print put the results
                     file.write(sent[n])
             n += 1
+
+
 def chunk_data(clean_path:str,out_path:str,chunk_num:int,stat_dict:dict):
     """
     chunk data based on each chunk size
@@ -111,7 +117,7 @@ def chunk_data(clean_path:str,out_path:str,chunk_num:int,stat_dict:dict):
                 val.append(data_val)
                 test.append(data_test)
                 n += 1
-            chunked_text = text[chunk_num*(n):]     # the last chunk contains the rest of the results
+            chunked_text = text[chunk_size*n:]     # the last chunk contains the rest of the results
             data_train, data_val, data_test = split_data(chunked_text)
             # convert back to string
             train.append(data_train)
@@ -126,6 +132,22 @@ def chunk_data(clean_path:str,out_path:str,chunk_num:int,stat_dict:dict):
     group_txt(all_test, out_path, 'test')
 
 
+def get_all_stat(out_path):
+    """get stat in the folder"""
+    # get stat to verify the results
+    stat_all = pd.DataFrame()
+    for file_dir in os.listdir(out_path):
+        # get train, val and test iteratively
+        mode_lst = ['train', 'val', 'test']
+        for mode in mode_lst:
+            with open(out_path + file_dir + '/' + mode + '.txt', 'r', errors='ignore') as f:
+                text = f.readlines()
+                # clean train data
+                stat = pd.DataFrame([file_dir, mode, count_words(text)]).T
+                stat_all = pd.concat([stat_all, stat])
+    stat_all.rename(columns={0: 'chunk', 1: 'set', 2: 'token_num'}, inplace=True)
+    stat_all.to_csv(out_path + 'stat.csv')
+
 ################# Main #################
 if __name__ == "__main__":
 
@@ -135,6 +157,7 @@ if __name__ == "__main__":
     clean_path = '/data/Generative_replay/knn-transformers/data/train/cleaned/'
     out_path = '/data/Generative_replay/knn-transformers/data/train/chunked/'
     # clean and split text data
-    stat_dict = get_stat(text_path, CHILDES_path, clean_path)
+    stat_dict = clean_data(text_path, CHILDES_path, clean_path)
     # chunk the data
     chunk_data(clean_path,out_path,chunk_num,stat_dict)
+    get_all_stat(out_path)
